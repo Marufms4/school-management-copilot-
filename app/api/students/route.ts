@@ -2,123 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, Student } from '@/types';
 import { validateStudent } from '@/lib/validation';
 import { getSession } from '@/lib/auth';
+import { callProc, callProcOne, pgDateToString } from '@/lib/db';
 
-const mockStudents: Student[] = [
-  {
-    id: '1',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2024001',
-    firstName: 'Arjun',
-    lastName: 'Patel',
-    dateOfBirth: '2010-05-15',
-    gender: 'Male',
-    classId: 'class8a',
-    className: 'Class 8',
-    section: 'A',
-    parentName: 'Rajesh Patel',
-    parentPhone: '9876512345',
-    parentEmail: 'rajesh.patel@email.com',
-    address: '123, Park Street, Mumbai',
-    status: 'Active',
-    admissionDate: '2024-06-01',
-    createdAt: '2024-06-01',
-  },
-  {
-    id: '2',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2024002',
-    firstName: 'Ananya',
-    lastName: 'Singh',
-    dateOfBirth: '2011-08-22',
-    gender: 'Female',
-    classId: 'class7b',
-    className: 'Class 7',
-    section: 'B',
-    parentName: 'Vikram Singh',
-    parentPhone: '9876512346',
-    parentEmail: 'vikram.singh@email.com',
-    address: '456, Lake Road, Mumbai',
-    status: 'Active',
-    admissionDate: '2024-06-01',
-    createdAt: '2024-06-01',
-  },
-  {
-    id: '3',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2024003',
-    firstName: 'Rohan',
-    lastName: 'Mehta',
-    dateOfBirth: '2009-11-10',
-    gender: 'Male',
-    classId: 'class9c',
-    className: 'Class 9',
-    section: 'C',
-    parentName: 'Suresh Mehta',
-    parentPhone: '9876512347',
-    parentEmail: 'suresh.mehta@email.com',
-    address: '789, Hill Avenue, Mumbai',
-    status: 'Active',
-    admissionDate: '2023-06-01',
-    createdAt: '2023-06-01',
-  },
-  {
-    id: '4',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2023001',
-    firstName: 'Sneha',
-    lastName: 'Kumar',
-    dateOfBirth: '2008-03-18',
-    gender: 'Female',
-    classId: 'class10a',
-    className: 'Class 10',
-    section: 'A',
-    parentName: 'Anil Kumar',
-    parentPhone: '9876512348',
-    parentEmail: 'anil.kumar@email.com',
-    address: '321, River View, Pune',
-    status: 'Active',
-    admissionDate: '2022-06-01',
-    createdAt: '2022-06-01',
-  },
-  {
-    id: '5',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2022001',
-    firstName: 'Karan',
-    lastName: 'Gupta',
-    dateOfBirth: '2007-07-25',
-    gender: 'Male',
-    classId: 'class11sci',
-    className: 'Class 11',
-    section: 'Science',
-    parentName: 'Mohan Gupta',
-    parentPhone: '9876512349',
-    parentEmail: 'mohan.gupta@email.com',
-    address: '654, Garden Colony, Pune',
-    status: 'Active',
-    admissionDate: '2021-06-01',
-    createdAt: '2021-06-01',
-  },
-  {
-    id: '6',
-    tenantId: 'school1',
-    admissionNumber: 'ADM2020001',
-    firstName: 'Divya',
-    lastName: 'Nair',
-    dateOfBirth: '2006-01-30',
-    gender: 'Female',
-    classId: 'class12arts',
-    className: 'Class 12',
-    section: 'Arts',
-    parentName: 'Sunil Nair',
-    parentPhone: '9876512350',
-    parentEmail: 'sunil.nair@email.com',
-    address: '987, Sea View, Chennai',
-    status: 'Graduated',
-    admissionDate: '2020-06-01',
-    createdAt: '2020-06-01',
-  },
-];
+// ---------------------------------------------------------------------------
+// DB row → Student mapper
+// ---------------------------------------------------------------------------
+function mapRow(row: Record<string, unknown>): Student {
+  return {
+    id:              row.id as string,
+    tenantId:        row.tenant_id as string,
+    admissionNumber: row.admission_number as string,
+    firstName:       row.first_name as string,
+    lastName:        row.last_name as string,
+    dateOfBirth:     pgDateToString(row.date_of_birth),
+    gender:          row.gender as Student['gender'],
+    classId:         row.class_id as string,
+    className:       row.class_name as string,
+    section:         row.section as string,
+    parentName:      row.parent_name as string,
+    parentPhone:     row.parent_phone as string,
+    parentEmail:     (row.parent_email as string) ?? '',
+    address:         (row.address as string) ?? '',
+    status:          row.status as Student['status'],
+    admissionDate:   pgDateToString(row.admission_date),
+    createdAt:       row.created_at as string,
+  };
+}
 
 export async function GET(_request: NextRequest) {
   try {
@@ -129,9 +38,18 @@ export async function GET(_request: NextRequest) {
         { status: 401 }
       );
     }
-    const tenantStudents = mockStudents.filter((s) => s.tenantId === session.tenantId);
-    return NextResponse.json<ApiResponse<Student[]>>({ success: true, data: tenantStudents });
-  } catch {
+
+    // sp_get_students(p_tenant_id, p_status, p_class_id)
+    const rows = await callProc<Record<string, unknown>>(
+      'sp_get_students',
+      [session.tenantId, null, null]
+    );
+    return NextResponse.json<ApiResponse<Student[]>>({
+      success: true,
+      data: rows.map(mapRow),
+    });
+  } catch (err) {
+    console.error('[GET /api/students]', err);
     return NextResponse.json<ApiResponse<null>>(
       { success: false, error: 'Internal server error' },
       { status: 500 }
@@ -148,6 +66,7 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
     const body = (await request.json()) as Record<string, unknown>;
     const validation = validateStudent(body);
     if (!validation.valid) {
@@ -160,31 +79,39 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const newStudent: Student = {
-      id: Date.now().toString(),
-      tenantId: session.tenantId,
-      admissionNumber: `ADM${Date.now()}`,
-      firstName: body.firstName as string,
-      lastName: body.lastName as string,
-      dateOfBirth: body.dateOfBirth as string,
-      gender: (body.gender as Student['gender']) || 'Male',
-      classId: body.classId as string,
-      className: (body.className as string) || '',
-      section: (body.section as string) || 'A',
-      parentName: body.parentName as string,
-      parentPhone: body.parentPhone as string,
-      parentEmail: (body.parentEmail as string) || '',
-      address: (body.address as string) || '',
-      status: 'Active',
-      admissionDate: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toISOString(),
-    };
-    mockStudents.push(newStudent);
+
+    // sp_admit_student(tenant_id, first_name, last_name, date_of_birth, gender,
+    //                  class_id, class_name, section, parent_name, parent_phone,
+    //                  parent_email, address, admission_date)
+    const row = await callProcOne<Record<string, unknown>>('sp_admit_student', [
+      session.tenantId,
+      body.firstName,
+      body.lastName,
+      body.dateOfBirth,
+      body.gender ?? 'Male',
+      body.classId,
+      body.className ?? '',
+      body.section ?? 'A',
+      body.parentName,
+      body.parentPhone,
+      body.parentEmail ?? null,
+      body.address ?? null,
+      body.admissionDate ?? null,
+    ]);
+
+    if (!row) {
+      return NextResponse.json<ApiResponse<null>>(
+        { success: false, error: 'Failed to admit student' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json<ApiResponse<Student>>(
-      { success: true, data: newStudent, message: 'Student admitted successfully' },
+      { success: true, data: mapRow(row), message: 'Student admitted successfully' },
       { status: 201 }
     );
-  } catch {
+  } catch (err) {
+    console.error('[POST /api/students]', err);
     return NextResponse.json<ApiResponse<null>>(
       { success: false, error: 'Internal server error' },
       { status: 500 }

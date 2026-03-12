@@ -19,7 +19,7 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ staffId: '1', month: 1, year: 2025, lopDays: 0 });
+  const [form, setForm] = useState({ staffId: '1', month: 1, year: new Date().getFullYear(), lopDays: 0 });
   const [submitting, setSubmitting] = useState(false);
   const [formMsg, setFormMsg] = useState('');
 

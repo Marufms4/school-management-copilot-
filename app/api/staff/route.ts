@@ -2,90 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, Staff } from '@/types';
 import { validateStaff } from '@/lib/validation';
 import { getSession } from '@/lib/auth';
+import { callProc, callProcOne, pgDateToString } from '@/lib/db';
 
-// Mock data for demo (replace with DB queries using lib/db.ts in production)
-const mockStaff: Staff[] = [
-  {
-    id: '1',
-    tenantId: 'school1',
-    employeeCode: 'EMP001',
-    firstName: 'John',
-    lastName: 'Smith',
-    email: 'john.smith@school.com',
-    phone: '9876543210',
-    department: 'Mathematics',
-    designation: 'Senior Teacher',
-    status: 'Active',
-    joinDate: '2020-01-15',
-    basicSalary: 50000,
-    createdAt: '2020-01-15',
-    updatedAt: '2024-01-01',
-  },
-  {
-    id: '2',
-    tenantId: 'school1',
-    employeeCode: 'EMP002',
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    email: 'sarah.j@school.com',
-    phone: '9876543211',
-    department: 'Science',
-    designation: 'Teacher',
-    status: 'On-Leave',
-    joinDate: '2021-06-01',
-    basicSalary: 45000,
-    createdAt: '2021-06-01',
-    updatedAt: '2024-01-01',
-  },
-  {
-    id: '3',
-    tenantId: 'school1',
-    employeeCode: 'EMP003',
-    firstName: 'Michael',
-    lastName: 'Chen',
-    email: 'michael.c@school.com',
-    phone: '9876543212',
-    department: 'English',
-    designation: 'Teacher',
-    status: 'Active',
-    joinDate: '2019-08-01',
-    basicSalary: 48000,
-    createdAt: '2019-08-01',
-    updatedAt: '2024-01-01',
-  },
-  {
-    id: '4',
-    tenantId: 'school1',
-    employeeCode: 'EMP004',
-    firstName: 'Priya',
-    lastName: 'Sharma',
-    email: 'priya.s@school.com',
-    phone: '9876543213',
-    department: 'Administration',
-    designation: 'Principal',
-    status: 'Active',
-    joinDate: '2015-04-01',
-    basicSalary: 80000,
-    createdAt: '2015-04-01',
-    updatedAt: '2024-01-01',
-  },
-  {
-    id: '5',
-    tenantId: 'school1',
-    employeeCode: 'EMP005',
-    firstName: 'Robert',
-    lastName: 'Williams',
-    email: 'robert.w@school.com',
-    phone: '9876543214',
-    department: 'Physical Education',
-    designation: 'Sports Coach',
-    status: 'Terminated',
-    joinDate: '2018-07-15',
-    basicSalary: 38000,
-    createdAt: '2018-07-15',
-    updatedAt: '2023-12-31',
-  },
-];
+// ---------------------------------------------------------------------------
+// DB row → Staff interface mapper
+// (PostgreSQL snake_case → TypeScript camelCase)
+// ---------------------------------------------------------------------------
+function mapRow(row: Record<string, unknown>): Staff {
+  return {
+    id:            row.id as string,
+    tenantId:      row.tenant_id as string,
+    employeeCode:  row.employee_code as string,
+    firstName:     row.first_name as string,
+    lastName:      row.last_name as string,
+    email:         row.email as string,
+    phone:         (row.phone as string) ?? '',
+    department:    row.department as string,
+    designation:   row.designation as string,
+    status:        row.status as Staff['status'],
+    joinDate:      pgDateToString(row.join_date),
+    basicSalary:   Number(row.basic_salary),
+    createdAt:     row.created_at as string,
+    updatedAt:     row.updated_at as string,
+  };
+}
 
 export async function GET(_request: NextRequest) {
   try {
@@ -96,9 +36,16 @@ export async function GET(_request: NextRequest) {
         { status: 401 }
       );
     }
-    const tenantStaff = mockStaff.filter((s) => s.tenantId === session.tenantId);
-    return NextResponse.json<ApiResponse<Staff[]>>({ success: true, data: tenantStaff });
-  } catch {
+
+    // sp_get_staff(p_tenant_id, p_status)
+    const rows = await callProc<Record<string, unknown>>(
+      'sp_get_staff',
+      [session.tenantId, null]
+    );
+    const staff = rows.map(mapRow);
+    return NextResponse.json<ApiResponse<Staff[]>>({ success: true, data: staff });
+  } catch (err) {
+    console.error('[GET /api/staff]', err);
     return NextResponse.json<ApiResponse<null>>(
       { success: false, error: 'Internal server error' },
       { status: 500 }
@@ -115,6 +62,7 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
     const body = (await request.json()) as Record<string, unknown>;
     const validation = validateStaff(body);
     if (!validation.valid) {
@@ -127,28 +75,34 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const newStaff: Staff = {
-      id: Date.now().toString(),
-      tenantId: session.tenantId,
-      employeeCode: `EMP${Date.now()}`,
-      firstName: body.firstName as string,
-      lastName: body.lastName as string,
-      email: body.email as string,
-      phone: (body.phone as string) || '',
-      department: body.department as string,
-      designation: body.designation as string,
-      status: 'Active',
-      joinDate: new Date().toISOString().slice(0, 10),
-      basicSalary: Number(body.basicSalary),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    mockStaff.push(newStaff);
+
+    // sp_create_staff(tenant_id, first_name, last_name, email, phone,
+    //                 department, designation, basic_salary, join_date)
+    const row = await callProcOne<Record<string, unknown>>('sp_create_staff', [
+      session.tenantId,
+      body.firstName,
+      body.lastName,
+      body.email,
+      body.phone ?? '',
+      body.department,
+      body.designation,
+      Number(body.basicSalary),
+      body.joinDate ?? null,
+    ]);
+
+    if (!row) {
+      return NextResponse.json<ApiResponse<null>>(
+        { success: false, error: 'Failed to create staff record' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json<ApiResponse<Staff>>(
-      { success: true, data: newStaff, message: 'Staff created successfully' },
+      { success: true, data: mapRow(row), message: 'Staff created successfully' },
       { status: 201 }
     );
-  } catch {
+  } catch (err) {
+    console.error('[POST /api/staff]', err);
     return NextResponse.json<ApiResponse<null>>(
       { success: false, error: 'Internal server error' },
       { status: 500 }
