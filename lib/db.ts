@@ -1,133 +1,146 @@
-import { Pool, PoolClient } from 'pg';
+import sql from 'mssql';
 
 // ---------------------------------------------------------------------------
-// Connection pool (singleton)
+// SQL Server connection config
 // ---------------------------------------------------------------------------
-let pool: Pool | null = null;
+const config: sql.config = {
+  server:   process.env.DB_SERVER   || 'localhost',
+  database: process.env.DB_NAME     || 'EduCoreSaaS',
+  user:     process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  port:     parseInt(process.env.DB_PORT || '1433', 10),
+  options: {
+    encrypt:               process.env.DB_ENCRYPT      !== 'false',
+    trustServerCertificate: process.env.DB_TRUST_CERT  !== 'false',
+  },
+  pool: {
+    max:                10,
+    min:                0,
+    idleTimeoutMillis:  30_000,
+  },
+  connectionTimeout: 15_000,
+  requestTimeout:    30_000,
+};
 
-export function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
+// ---------------------------------------------------------------------------
+// Connection pool (singleton promise)
+// ---------------------------------------------------------------------------
+let poolPromise: Promise<sql.ConnectionPool> | null = null;
 
-    pool.on('error', (err) => {
-      console.error('[DB] Unexpected pool error:', err.message);
-    });
+export function getPool(): Promise<sql.ConnectionPool> {
+  if (!poolPromise) {
+    poolPromise = new sql.ConnectionPool(config)
+      .connect()
+      .catch((err: Error) => {
+        console.error('[DB] Connection pool error:', err.message);
+        poolPromise = null;
+        throw err;
+      });
   }
-  return pool;
+  return poolPromise;
 }
 
 // ---------------------------------------------------------------------------
-// Raw parameterised query (for ad-hoc SELECT / DDL in migrations)
+// Raw parameterised query
+// params is a key→value map of named input parameters  (@key in the SQL)
 // ---------------------------------------------------------------------------
 export async function query<T = Record<string, unknown>>(
-  sql: string,
-  params?: unknown[]
+  sqlText: string,
+  params?: Record<string, unknown>
 ): Promise<T[]> {
-  const result = await getPool().query(sql, params);
-  return result.rows as T[];
+  const pool    = await getPool();
+  const request = pool.request();
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      request.input(key, value ?? null);
+    }
+  }
+  const result = await request.query(sqlText);
+  return result.recordset as T[];
 }
 
 // ---------------------------------------------------------------------------
-// Stored-procedure / function caller
+// Stored-procedure caller
 //
-// All stored procedures in this project are PostgreSQL functions that return
-// a set of rows (RETURNS TABLE or RETURNS SETOF).  They are invoked via:
-//
-//   SELECT * FROM sp_name($1, $2, ...)
-//
+// All stored procedures accept named parameters.
 // Usage:
-//   const rows = await callProc<Staff>('sp_get_staff', [tenantId, null]);
+//   const rows = await callProc<Staff>('sp_get_staff', {
+//     p_tenant_id: tenantId,
+//     p_status: null,
+//   });
 // ---------------------------------------------------------------------------
 export async function callProc<T = Record<string, unknown>>(
   procName: string,
-  params: unknown[] = []
+  params: Record<string, unknown> = {}
 ): Promise<T[]> {
-  // Build positional placeholder list: $1, $2, ...
-  const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
-  const sql = `SELECT * FROM ${procName}(${placeholders})`;
-  const result = await getPool().query(sql, params);
-  return result.rows as T[];
+  const pool    = await getPool();
+  const request = pool.request();
+  for (const [key, value] of Object.entries(params)) {
+    request.input(key, value ?? null);
+  }
+  const result = await request.execute(procName);
+  return result.recordset as T[];
 }
 
 // ---------------------------------------------------------------------------
-// callProcOne: convenience wrapper that returns the first row or null.
-// Useful for SPs that always return exactly one row (e.g. sp_create_staff).
+// callProcOne: convenience wrapper – returns first row or null
 // ---------------------------------------------------------------------------
 export async function callProcOne<T = Record<string, unknown>>(
   procName: string,
-  params: unknown[] = []
+  params: Record<string, unknown> = {}
 ): Promise<T | null> {
   const rows = await callProc<T>(procName, params);
   return rows.length > 0 ? rows[0] : null;
 }
 
 // ---------------------------------------------------------------------------
-// callProcVoid: call a stored procedure that returns VOID (e.g. status updates)
+// callProcVoid: call a stored procedure that returns no result set
 // ---------------------------------------------------------------------------
 export async function callProcVoid(
   procName: string,
-  params: unknown[] = []
+  params: Record<string, unknown> = {}
 ): Promise<void> {
-  const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
-  const sql = `SELECT ${procName}(${placeholders})`;
-  await getPool().query(sql, params);
+  const pool    = await getPool();
+  const request = pool.request();
+  for (const [key, value] of Object.entries(params)) {
+    request.input(key, value ?? null);
+  }
+  await request.execute(procName);
 }
 
 // ---------------------------------------------------------------------------
 // Transaction helper
-// Wraps multiple SP/query calls in a BEGIN … COMMIT block.
-// Automatically rolls back on any thrown error.
-//
-// Usage:
-//   await withTransaction(async (client) => {
-//     await callProcInTx(client, 'sp_process_payroll', [...]);
-//     await callProcVoidInTx(client, 'sp_mark_payroll_paid', [...]);
-//   });
 // ---------------------------------------------------------------------------
 export async function withTransaction<T>(
-  fn: (client: PoolClient) => Promise<T>
+  fn: (transaction: sql.Transaction) => Promise<T>
 ): Promise<T> {
-  const client = await getPool().connect();
+  const pool        = await getPool();
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
   try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
+    const result = await fn(transaction);
+    await transaction.commit();
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    await transaction.rollback();
     throw err;
-  } finally {
-    client.release();
   }
 }
 
 // ---------------------------------------------------------------------------
-// In-transaction variants of callProc / callProcVoid
+// In-transaction stored-procedure caller
 // ---------------------------------------------------------------------------
 export async function callProcInTx<T = Record<string, unknown>>(
-  client: PoolClient,
+  transaction: sql.Transaction,
   procName: string,
-  params: unknown[] = []
+  params: Record<string, unknown> = {}
 ): Promise<T[]> {
-  const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
-  const sql = `SELECT * FROM ${procName}(${placeholders})`;
-  const result = await client.query(sql, params);
-  return result.rows as T[];
-}
-
-export async function callProcVoidInTx(
-  client: PoolClient,
-  procName: string,
-  params: unknown[] = []
-): Promise<void> {
-  const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
-  const sql = `SELECT ${procName}(${placeholders})`;
-  await client.query(sql, params);
+  const request = new sql.Request(transaction);
+  for (const [key, value] of Object.entries(params)) {
+    request.input(key, value ?? null);
+  }
+  const result = await request.execute(procName);
+  return result.recordset as T[];
 }
 
 // ---------------------------------------------------------------------------
@@ -135,11 +148,14 @@ export async function callProcVoidInTx(
 // ---------------------------------------------------------------------------
 
 /**
- * Safely slice a date/timestamp value returned by pg into an ISO date string
- * (YYYY-MM-DD).  Centralises the repeated `.slice(0,10)` pattern used across
- * API route mappers.
+ * Safely convert a date/datetime value returned by mssql into an ISO date
+ * string (YYYY-MM-DD).
  */
-export function pgDateToString(value: unknown): string {
+export function dateToString(value: unknown): string {
   if (!value) return '';
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
   return String(value).slice(0, 10);
 }
+

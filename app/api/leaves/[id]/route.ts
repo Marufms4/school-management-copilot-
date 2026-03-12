@@ -28,12 +28,12 @@ export async function PATCH(
     }
 
     // sp_update_leave_status(p_tenant_id, p_leave_id, p_status, p_reviewer_id)
-    await callProcVoid('sp_update_leave_status', [
-      session.tenantId,
-      id,
-      body.status,
-      session.id,
-    ]);
+    await callProcVoid('sp_update_leave_status', {
+      p_tenant_id:   session.tenantId,
+      p_leave_id:    id,
+      p_status:      body.status,
+      p_reviewer_id: session.id,
+    });
 
     return NextResponse.json<ApiResponse<null>>({
       success: true,

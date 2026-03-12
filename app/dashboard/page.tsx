@@ -176,7 +176,7 @@ export default function DashboardPage() {
           </div>
         </div>
         {stats?.revenueData && (
-          <RevenueChart data={stats.revenueData} width={800} height={280} />
+          <RevenueChart data={stats.revenueData} height={280} />
         )}
       </div>
 

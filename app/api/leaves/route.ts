@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, LeaveRequest } from '@/types';
 import { getSession } from '@/lib/auth';
-import { callProc, callProcOne, pgDateToString } from '@/lib/db';
+import { callProc, callProcOne, dateToString } from '@/lib/db';
 
 // ---------------------------------------------------------------------------
 // DB row → LeaveRequest mapper
@@ -12,8 +12,8 @@ function mapRow(row: Record<string, unknown>): LeaveRequest {
     tenantId:   row.tenant_id as string,
     staffId:    row.staff_id as string,
     leaveType:  row.leave_type as LeaveRequest['leaveType'],
-    startDate:  pgDateToString(row.start_date),
-    endDate:    pgDateToString(row.end_date),
+    startDate:  dateToString(row.start_date),
+    endDate:    dateToString(row.end_date),
     days:       Number(row.days),
     reason:     (row.reason as string) ?? '',
     status:     row.status as LeaveRequest['status'],
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     // sp_get_leave_requests(p_tenant_id, p_staff_id, p_status)
     const rows = await callProc<Record<string, unknown>>(
       'sp_get_leave_requests',
-      [session.tenantId, staffId, status]
+      { p_tenant_id: session.tenantId, p_staff_id: staffId, p_status: status }
     );
 
     return NextResponse.json<ApiResponse<LeaveRequest[]>>({
@@ -82,16 +82,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // sp_create_leave_request(tenant_id, staff_id, leave_type,
-    //                         start_date, end_date, reason)
-    const row = await callProcOne<Record<string, unknown>>('sp_create_leave_request', [
-      session.tenantId,
-      body.staffId,
-      body.leaveType,
-      body.startDate,
-      body.endDate,
-      body.reason ?? null,
-    ]);
+    // sp_create_leave_request(...)
+    const row = await callProcOne<Record<string, unknown>>('sp_create_leave_request', {
+      p_tenant_id:  session.tenantId,
+      p_staff_id:   body.staffId,
+      p_leave_type: body.leaveType,
+      p_start_date: body.startDate,
+      p_end_date:   body.endDate,
+      p_reason:     body.reason ?? null,
+    });
 
     if (!row) {
       return NextResponse.json<ApiResponse<null>>(

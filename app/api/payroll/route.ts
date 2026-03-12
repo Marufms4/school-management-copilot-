@@ -39,7 +39,7 @@ export async function GET(_request: NextRequest) {
     // sp_get_payroll(p_tenant_id, p_staff_id, p_month, p_year)
     const rows = await callProc<Record<string, unknown>>(
       'sp_get_payroll',
-      [session.tenantId, null, null, null]
+      { p_tenant_id: session.tenantId, p_staff_id: null, p_month: null, p_year: null }
     );
     return NextResponse.json<ApiResponse<Payroll[]>>({
       success: true,
@@ -81,13 +81,13 @@ export async function POST(request: NextRequest) {
 
     // sp_process_payroll(p_tenant_id, p_staff_id, p_month, p_year, p_lop_days)
     // When p_lop_days is null the SP auto-calculates from approved leave records.
-    const row = await callProcOne<Record<string, unknown>>('sp_process_payroll', [
-      session.tenantId,
-      staffId,
-      month,
-      year,
-      lopDays,
-    ]);
+    const row = await callProcOne<Record<string, unknown>>('sp_process_payroll', {
+      p_tenant_id: session.tenantId,
+      p_staff_id:  staffId,
+      p_month:     month,
+      p_year:      year,
+      p_lop_days:  lopDays,
+    });
 
     if (!row) {
       return NextResponse.json<ApiResponse<null>>(

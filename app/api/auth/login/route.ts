@@ -29,11 +29,11 @@ export async function POST(request: NextRequest) {
       name: string;
       role: string;
       is_active: boolean;
-    }>('sp_authenticate_user', [tenantId, email]);
+    }>('sp_authenticate_user', { p_tenant_id: tenantId, p_email: email });
 
-    // When DATABASE_URL is not configured (dev/demo mode) fall back to
+    // When DB_SERVER is not configured (dev/demo mode) fall back to
     // the hardcoded demo credential so the UI stays functional.
-    const isDevMode = !process.env.DATABASE_URL;
+    const isDevMode = !process.env.DB_SERVER;
 
     if (!dbUser) {
       if (!isDevMode) {
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Stamp last_login via SP
-    await callProcVoid('sp_update_last_login', [dbUser.id]);
+    await callProcVoid('sp_update_last_login', { p_user_id: dbUser.id });
 
     const token = createToken(user);
     const response = NextResponse.json<ApiResponse<User>>({

@@ -16,13 +16,13 @@ export async function GET(_request: NextRequest) {
     // sp_get_dashboard_stats(p_tenant_id)
     const statsRow = await callProcOne<Record<string, unknown>>(
       'sp_get_dashboard_stats',
-      [session.tenantId]
+      { p_tenant_id: session.tenantId }
     );
 
     // sp_get_revenue_trend(p_tenant_id, p_months)
     const trendRows = await callProc<Record<string, unknown>>(
       'sp_get_revenue_trend',
-      [session.tenantId, 12]
+      { p_tenant_id: session.tenantId, p_months: 12 }
     );
 
     const stats: DashboardStats = {

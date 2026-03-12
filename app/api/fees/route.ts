@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, FeePayment } from '@/types';
 import { validateFeePayment } from '@/lib/validation';
 import { getSession } from '@/lib/auth';
-import { callProc, callProcOne, pgDateToString } from '@/lib/db';
+import { callProc, callProcOne, dateToString } from '@/lib/db';
 
 // ---------------------------------------------------------------------------
 // DB row → FeePayment mapper
@@ -18,7 +18,7 @@ function mapRow(row: Record<string, unknown>): FeePayment {
     balance:        Number(row.balance),
     lateFee:        Number(row.late_fee),
     receiptNumber:  (row.receipt_number as string) ?? '',
-    paymentDate:    pgDateToString(row.payment_date),
+    paymentDate:    dateToString(row.payment_date),
     paymentMode:    (row.payment_mode as FeePayment['paymentMode']) ?? 'Cash',
     status:         row.status as FeePayment['status'],
   };
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest) {
     // sp_get_fee_payments(p_tenant_id, p_student_id, p_status)
     const rows = await callProc<Record<string, unknown>>(
       'sp_get_fee_payments',
-      [session.tenantId, null, null]
+      { p_tenant_id: session.tenantId, p_student_id: null, p_status: null }
     );
     return NextResponse.json<ApiResponse<FeePayment[]>>({
       success: true,
@@ -75,16 +75,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // sp_record_fee_payment(tenant_id, student_id, fee_category_id,
-    //                       paid_amount, payment_mode, payment_date)
-    const row = await callProcOne<Record<string, unknown>>('sp_record_fee_payment', [
-      session.tenantId,
-      body.studentId,
-      body.feeCategoryId,
-      Number(body.paidAmount),
-      body.paymentMode,
-      body.paymentDate ?? null,
-    ]);
+    // sp_record_fee_payment(...)
+    const row = await callProcOne<Record<string, unknown>>('sp_record_fee_payment', {
+      p_tenant_id:        session.tenantId,
+      p_student_id:       body.studentId,
+      p_fee_category_id:  body.feeCategoryId,
+      p_paid_amount:      Number(body.paidAmount),
+      p_payment_mode:     body.paymentMode,
+      p_payment_date:     body.paymentDate ?? null,
+    });
 
     if (!row) {
       return NextResponse.json<ApiResponse<null>>(

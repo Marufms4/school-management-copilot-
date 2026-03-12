@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { ApiResponse, Student } from '@/types';
 import { validateStudent } from '@/lib/validation';
 import { getSession } from '@/lib/auth';
-import { callProc, callProcOne, pgDateToString } from '@/lib/db';
+import { callProc, callProcOne, dateToString } from '@/lib/db';
 
 // ---------------------------------------------------------------------------
 // DB row → Student mapper
@@ -14,7 +14,7 @@ function mapRow(row: Record<string, unknown>): Student {
     admissionNumber: row.admission_number as string,
     firstName:       row.first_name as string,
     lastName:        row.last_name as string,
-    dateOfBirth:     pgDateToString(row.date_of_birth),
+    dateOfBirth:     dateToString(row.date_of_birth),
     gender:          row.gender as Student['gender'],
     classId:         row.class_id as string,
     className:       row.class_name as string,
@@ -24,7 +24,7 @@ function mapRow(row: Record<string, unknown>): Student {
     parentEmail:     (row.parent_email as string) ?? '',
     address:         (row.address as string) ?? '',
     status:          row.status as Student['status'],
-    admissionDate:   pgDateToString(row.admission_date),
+    admissionDate:   dateToString(row.admission_date),
     createdAt:       row.created_at as string,
   };
 }
@@ -42,7 +42,7 @@ export async function GET(_request: NextRequest) {
     // sp_get_students(p_tenant_id, p_status, p_class_id)
     const rows = await callProc<Record<string, unknown>>(
       'sp_get_students',
-      [session.tenantId, null, null]
+      { p_tenant_id: session.tenantId, p_status: null, p_class_id: null }
     );
     return NextResponse.json<ApiResponse<Student[]>>({
       success: true,
@@ -80,24 +80,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // sp_admit_student(tenant_id, first_name, last_name, date_of_birth, gender,
-    //                  class_id, class_name, section, parent_name, parent_phone,
-    //                  parent_email, address, admission_date)
-    const row = await callProcOne<Record<string, unknown>>('sp_admit_student', [
-      session.tenantId,
-      body.firstName,
-      body.lastName,
-      body.dateOfBirth,
-      body.gender ?? 'Male',
-      body.classId,
-      body.className ?? '',
-      body.section ?? 'A',
-      body.parentName,
-      body.parentPhone,
-      body.parentEmail ?? null,
-      body.address ?? null,
-      body.admissionDate ?? null,
-    ]);
+    // sp_admit_student(...)
+    const row = await callProcOne<Record<string, unknown>>('sp_admit_student', {
+      p_tenant_id:      session.tenantId,
+      p_first_name:     body.firstName,
+      p_last_name:      body.lastName,
+      p_date_of_birth:  body.dateOfBirth,
+      p_gender:         body.gender ?? 'Male',
+      p_class_id:       body.classId,
+      p_class_name:     body.className ?? '',
+      p_section:        body.section ?? 'A',
+      p_parent_name:    body.parentName,
+      p_parent_phone:   body.parentPhone,
+      p_parent_email:   body.parentEmail ?? null,
+      p_address:        body.address ?? null,
+      p_admission_date: body.admissionDate ?? null,
+    });
 
     if (!row) {
       return NextResponse.json<ApiResponse<null>>(
