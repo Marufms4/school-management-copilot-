@@ -119,7 +119,7 @@ EXEC sp_process_payroll @p_tenant_id = @tenant1,
 
 -- Mark first 3 as Paid
 EXEC sp_mark_payroll_paid @p_tenant_id = @tenant1,
-     @p_payroll_id = (SELECT id FROM payroll WHERE tenant_id = @tenant1AND staff_id = (SELECT sid FROM #staff_ids WHERE label='s1') AND month=3 AND year=2025);
+     @p_payroll_id = (SELECT id FROM payroll WHERE tenant_id = @tenant1 AND staff_id = (SELECT sid FROM #staff_ids WHERE label='s1') AND month=3 AND year=2025);
 EXEC sp_mark_payroll_paid @p_tenant_id = @tenant1,
      @p_payroll_id = (SELECT id FROM payroll WHERE tenant_id = @tenant1 AND staff_id = (SELECT sid FROM #staff_ids WHERE label='s2') AND month=3 AND year=2025);
 EXEC sp_mark_payroll_paid @p_tenant_id = @tenant1,

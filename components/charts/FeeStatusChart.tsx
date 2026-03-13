@@ -1,13 +1,18 @@
 'use client';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
+interface DataItem { name: string; value: number; fill?: string; }
+
 interface Props {
-  paid:    number;
-  partial: number;
-  pending: number;
+  // Accept either an explicit data array OR numeric props
+  data?:    DataItem[];
+  paid?:    number;
+  partial?: number;
+  pending?: number;
+  height?:  number;
 }
 
-const COLORS = ['#16a34a', '#d97706', '#dc2626'];
+const DEFAULT_COLORS = ['#16a34a', '#d97706', '#dc2626'];
 const RADIAN = Math.PI / 180;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,37 +28,45 @@ const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
   );
 };
 
-export default function FeeStatusChart({ paid, partial, pending }: Props) {
-  const data = [
-    { name: 'Paid',    value: paid    },
-    { name: 'Partial', value: partial },
-    { name: 'Pending', value: pending },
-  ].filter(d => d.value > 0);
+export default function FeeStatusChart({ data, paid = 0, partial = 0, pending = 0, height = 220 }: Props) {
+  // Normalise to a single array
+  const chartData: DataItem[] = data
+    ? data
+    : [
+        { name: 'Paid',    value: paid,    fill: '#16a34a' },
+        { name: 'Partial', value: partial, fill: '#d97706' },
+        { name: 'Pending', value: pending, fill: '#dc2626' },
+      ];
 
-  if (!data.length) {
+  const filtered = chartData.filter((d) => d.value > 0);
+
+  if (!filtered.length) {
     return (
-      <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '14px' }}>
+      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '14px' }}>
         No fee data
       </div>
     );
   }
 
+  const innerR = height < 160 ? 28 : 40;
+  const outerR = height < 160 ? 52 : 80;
+
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={height}>
       <PieChart>
         <Pie
-          data={data}
+          data={filtered}
           cx="50%"
           cy="50%"
           labelLine={false}
-          label={renderCustomLabel}
-          outerRadius={80}
-          innerRadius={40}
+          label={height >= 160 ? renderCustomLabel : undefined}
+          outerRadius={outerR}
+          innerRadius={innerR}
           dataKey="value"
           strokeWidth={2}
         >
-          {data.map((_, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          {filtered.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={entry.fill ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length]} />
           ))}
         </Pie>
         <Tooltip
@@ -61,7 +74,9 @@ export default function FeeStatusChart({ paid, partial, pending }: Props) {
           formatter={(value: any, name: any) => [`${value} records`, name]}
           contentStyle={{ borderRadius: '8px', fontSize: '13px', border: '1px solid #e2e8f0' }}
         />
-        <Legend wrapperStyle={{ fontSize: '13px' }} iconType="circle" iconSize={8} />
+        {height >= 160 && (
+          <Legend wrapperStyle={{ fontSize: '13px' }} iconType="circle" iconSize={8} />
+        )}
       </PieChart>
     </ResponsiveContainer>
   );

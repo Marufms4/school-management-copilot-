@@ -21,8 +21,8 @@ export interface Staff {
   status: 'Active' | 'On-Leave' | 'Terminated';
   joinDate: string;
   basicSalary: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SalaryComponent {
@@ -60,7 +60,7 @@ export interface LeaveRequest {
   days: number;
   reason: string;
   status: 'Pending' | 'Approved' | 'Rejected';
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface Student {
@@ -80,7 +80,7 @@ export interface Student {
   address: string;
   status: 'Active' | 'Graduated' | 'Withdrawn';
   admissionDate: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface FeeCategory {

@@ -11,10 +11,42 @@ function formatCurrency(n: number): string {
   return `₹${n}`;
 }
 
+const DEMO_REVENUE_DATA = [
+  { month: 'Apr 24', revenue: 820000,  expense: 640000  },
+  { month: 'May 24', revenue: 940000,  expense: 710000  },
+  { month: 'Jun 24', revenue: 860000,  expense: 690000  },
+  { month: 'Jul 24', revenue: 1100000, expense: 780000  },
+  { month: 'Aug 24', revenue: 1250000, expense: 890000  },
+  { month: 'Sep 24', revenue: 1380000, expense: 930000  },
+  { month: 'Oct 24', revenue: 1420000, expense: 950000  },
+  { month: 'Nov 24', revenue: 1310000, expense: 880000  },
+  { month: 'Dec 24', revenue: 980000,  expense: 760000  },
+  { month: 'Jan 25', revenue: 1150000, expense: 820000  },
+  { month: 'Feb 25', revenue: 1290000, expense: 870000  },
+  { month: 'Mar 25', revenue: 1480000, expense: 980000  },
+];
+
+const DEMO_STATS: DashboardStats = {
+  tenantId:       'demo',
+  totalStudents:  2008,
+  totalStaff:     150,
+  monthlyRevenue: 2980000,
+  monthlyExpense: 2170000,
+  pendingFees:    485000,
+  revenueData:    DEMO_REVENUE_DATA,
+};
+
+const DEMO_PAYROLL_CHART = [
+  { name: 'EMP001', basicSalary: 55000, grossSalary: 85250, netSalary: 78650 },
+  { name: 'EMP002', basicSalary: 48000, grossSalary: 74400, netSalary: 52025 },
+  { name: 'EMP003', basicSalary: 62000, grossSalary: 96100, netSalary: 88660 },
+  { name: 'EMP004', basicSalary: 40000, grossSalary: 62000, netSalary: 57200 },
+  { name: 'EMP005', basicSalary: 38000, grossSalary: 58900, netSalary: 54340 },
+];
+
 export default function ReportsPage() {
-  const [stats,   setStats]   = useState<DashboardStats | null>(null);
+  const [stats,   setStats]   = useState<DashboardStats>(DEMO_STATS);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -22,36 +54,21 @@ export default function ReportsPage() {
       fetch('/api/payroll').then(r => r.json()),
     ]).then(([d, p]: [ApiResponse<DashboardStats>, ApiResponse<Payroll[]>]) => {
       if (d.success && d.data) setStats(d.data);
-      if (p.success && p.data) setPayroll(p.data);
-    }).catch(() => null)
-      .finally(() => setLoading(false));
+      if (p.success && p.data && p.data.length) setPayroll(p.data);
+    }).catch(() => null);
   }, []);
 
-  // Payroll chart data
-  const payrollChartData = payroll.slice(0, 8).map(p => ({
-    name:        p.staffId.slice(0, 6),
-    basicSalary: p.basicSalary,
-    grossSalary: p.grossSalary,
-    netSalary:   p.netSalary,
-  }));
+  // Payroll chart data – use live data if available else demo
+  const payrollChartData = payroll.length
+    ? payroll.slice(0, 8).map(p => ({ name: p.staffId.slice(0, 6), basicSalary: p.basicSalary, grossSalary: p.grossSalary, netSalary: p.netSalary }))
+    : DEMO_PAYROLL_CHART;
 
   const reportCards = [
-    { title: 'Total Revenue (YTD)',  value: formatCurrency((stats?.monthlyRevenue ?? 0) * 8), color: '#16a34a', bg: '#dcfce7' },
-    { title: 'Total Expense (YTD)',  value: formatCurrency((stats?.monthlyExpense ?? 0) * 8), color: '#dc2626', bg: '#fee2e2' },
-    { title: 'Pending Collections', value: formatCurrency(stats?.pendingFees ?? 0),           color: '#d97706', bg: '#fef9c3' },
-    { title: 'Net Surplus (YTD)',    value: formatCurrency(((stats?.monthlyRevenue ?? 0) - (stats?.monthlyExpense ?? 0)) * 8), color: '#6366f1', bg: '#ede9fe' },
+    { title: 'Total Revenue (YTD)',  value: formatCurrency(stats.monthlyRevenue * 8),                      color: '#16a34a', bg: '#dcfce7' },
+    { title: 'Total Expense (YTD)',  value: formatCurrency(stats.monthlyExpense * 8),                      color: '#dc2626', bg: '#fee2e2' },
+    { title: 'Pending Collections', value: formatCurrency(stats.pendingFees),                              color: '#d97706', bg: '#fef9c3' },
+    { title: 'Net Surplus (YTD)',    value: formatCurrency((stats.monthlyRevenue - stats.monthlyExpense) * 8), color: '#6366f1', bg: '#ede9fe' },
   ];
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-        <div style={{ textAlign: 'center', color: '#94a3b8' }}>
-          <div className="skeleton" style={{ width: '48px', height: '48px', borderRadius: '50%', margin: '0 auto 16px' }} />
-          <p>Loading reports…</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -96,13 +113,7 @@ export default function ReportsPage() {
           </div>
           <span className="badge badge-blue">12 Months</span>
         </div>
-        {stats?.revenueData ? (
-          <RevenueChart data={stats.revenueData} height={300} />
-        ) : (
-          <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-            Connect to database to view trend data
-          </div>
-        )}
+        <RevenueChart data={stats.revenueData?.length ? stats.revenueData : DEMO_REVENUE_DATA} height={300} />
       </div>
 
       {/* Two-column charts */}
